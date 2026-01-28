@@ -1,8 +1,8 @@
-# Auto-Reframe Pipeline 🎥🤖
+# Auto-Reframe Pipeline
 
 An intelligent, AI-powered automated video reframing tool designed to crop horizontal videos (16:9) into vertical (9:16) formats suitable for TikTok, Reels, and Shorts. It uses computer vision to track subjects, apply cinematic smoothing, and intelligently manage camera cuts.
 
-## ✨ Key Features
+## Key Features
 
 *   **Multi-Stage Detection**: Hybrid pipeline using **YOLOv8** (Objects), **MediaPipe** (Face/Pose), and **Spectral Residual Saliency** (Attention).
 *   **Smart Director AI**: Intelligently prioritizes targets: `Face > Body > Saliency`.
@@ -13,7 +13,7 @@ An intelligent, AI-powered automated video reframing tool designed to crop horiz
 *   **Audio Merging**: Automatically preserves original audio in the final output.
 *   **Cross-Platform**: Works on **Windows**, **Linux**, **WSL**, and **macOS**.
 
-## 🛠️ Installation
+## Installation
 
 ### Prerequisites
 1.  **Python 3.8+**
@@ -34,7 +34,7 @@ An intelligent, AI-powered automated video reframing tool designed to crop horiz
     pip install -r requirements.txt
     ```
 
-## 🚀 Usage
+## Usage
 
 ### Basic Command
 Run the pipeline in `offline` mode (recommended for best quality):
@@ -68,7 +68,7 @@ You can fine-tune the behavior in `config.json`. Key settings:
 }
 ```
 
-## 📂 Project Structure
+## Project Structure
 
 *   `auto_reframe.py`: Main entry point.
 *   `modules/pipeline/`: Core logic (Scanner, Analyzer, Renderer).
