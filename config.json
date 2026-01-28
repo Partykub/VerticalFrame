@@ -1,0 +1,50 @@
+{
+    "pipeline": {
+        "_comment": "เลือก pipeline เริ่มต้น: 'yolo', 'mediapipe', 'saliency', หรือ 'tracking'",
+        "default": "tracking"
+    },
+    "scanner": {
+        "_comment": "ตั้งค่าการสแกน. batch_size: จำนวนเฟรมที่ส่งเข้า GPU พร้อมกัน (ยิ่งเยอะยิ่งเร็วแต่กิน VRAM)",
+        "batch_size": 128
+    },
+    "tracking": {
+        "_comment": "smooth: 0.1-1.0, easing_type: linear, ease_in, ease_out, ease_in_out, sine_in, sine_out, sine_in_out",
+        "smooth_factor": 0.1,
+        "min_sharpness": 15,
+        "track_buffer": 30,
+        "detection_confidence": 0.3,
+        "easing_type": "sine_in_out"
+    },
+    "director": {
+        "_comment": "ตั้งค่า Director AI ในการเลือกเป้าหมาย face_priority: น้ำหนักขนาดหน้า, body_offset: จุดโฟกัสบนตัว (0.3=อก)",
+        "face_priority_size_weight": 1.0,
+        "body_offset_y": 0.3
+    },
+    "camera_control": {
+        "_comment": "Dead Zone: ระยะ % ที่ขยับได้โดยกล้องไม่ตาม (กันสั่น), Min Duration: เฟรมที่ต้องนิ่งก่อนเปลี่ยน anchor, Fast Pan: % จอที่ถ้าหลุดไปจะเร่งความเร็วตาม, transition_mode: cut, smooth, smart (ใกล้ smooth/ไกล cut)",
+        "transition_mode": "smart",
+        "smart_cut_threshold_percent": 0.4,
+        "dead_zone_percent": 0.10,
+        "min_duration_frames": 15,
+        "fast_pan_threshold_percent": 0.15,
+        "max_smooth_factor": 0.1
+    },
+    "smart_lock": {
+        "_comment": "ระบบล็อคเป้าหมาย: look_ahead (เช็คอนาคตก่อนเปลี่ยนคน), threshold (ต้องชนะกี่ % ถึงเปลี่ยน), grace_period (รอคนเก่านานแค่ไหนถ้าหาย)",
+        "look_ahead_frames": 60,
+        "switch_threshold_ratio": 0.6,
+        "grace_period_frames": 30
+    },
+    "saliency_control": {
+        "_comment": "ป้องกัน Saliency กระโดดไปมา. jump: ระยะโดด, stable: เฟรมที่เช็ค, ignore: ขอบ, confidence: % ความมั่นใจในอนาคต",
+        "jump_threshold_percent": 0.20,
+        "stable_frames": 20,
+        "ignore_border_percent": 0.20,
+        "look_ahead_confidence": 0.7
+    },
+    "visualization": {
+        "_comment": "ตั้งค่าการแสดงผล Debug",
+        "show_debug": true,
+        "draw_thickness": 2
+    }
+}

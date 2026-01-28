@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Models (Too large for git)
+*.pt
+*.pth
+*.onnx
+
+# Videos (Input & Output)
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Pipeline Temporary Files
+temp_*.json
+temp_*.mp4
+
+# Project Specific Output
+output_*.mp4
+*_out.mp4
+*_final.mp4
+*_ultimate_*.mp4
+
+# Logs
+*.log
+runs/
+
+# System
+.DS_Store
+Thumbs.db
