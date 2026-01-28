@@ -123,114 +123,122 @@ class VideoAnalyzer:
             # If we have a lock, and the proposal is DIFFERENT -> Check Future
             if active_track_id is not None and proposed_id != active_track_id:
                 
-                # Check if current locked target is STILL visible this frame?
-                current_locked_obj = None
-                for t in track_objs:
-                    if t['track_id'] == active_track_id and t['class_id'] == active_class_id:
-                        current_locked_obj = t
-                        break
+                # --- PRIORITY UPGRADE (Face > Body) ---
+                # If we are locked on a Body, but a Face is proposed -> SWITCH IMMEDIATELY
+                if active_class_id == 1 and proposed_class == 0:
+                     active_track_id = proposed_id
+                     active_class_id = proposed_class
+                     final_reason = f"Priority Upgrade: Body->Face ID:{proposed_id}"
                 
-                if current_locked_obj:
-                    # Locked target IS visible. Should we switch?
-                    # Perform LOOK-AHEAD validation
-                    future_wins_msg = ""
+                else:
+                    # Check if current locked target is STILL visible this frame?
+                    current_locked_obj = None
+                    for t in track_objs:
+                        if t['track_id'] == active_track_id and t['class_id'] == active_class_id:
+                            current_locked_obj = t
+                            break
                     
-                    if proposed_id is not None:
-                        # Compare [Locked] vs [Proposed] for next N frames
-                        score_locked = 0
-                        score_proposed = 0
+                    if current_locked_obj:
+                        # Locked target IS visible. Should we switch?
+                        # Perform LOOK-AHEAD validation
+                        future_wins_msg = ""
                         
-                        check_range = min(len(frames), i + LOOK_AHEAD_FRAMES)
-                        for k in range(i + 1, check_range):
-                            # Find largest face/body for locked vs proposed in future frame
-                            f_tracks = frames[k]['tracks']
+                        if proposed_id is not None:
+                            # Compare [Locked] vs [Proposed] for next N frames
+                            score_locked = 0
+                            score_proposed = 0
                             
-                            # Simple metric: Area
-                            area_locked = 0
-                            area_proposed = 0
-                            
-                            for ft in f_tracks:
-                                if ft['id'] == active_track_id and ft['class_id'] == active_class_id:
-                                    area_locked = ft['bbox'][2] * ft['bbox'][3]
-                                elif ft['id'] == proposed_id and ft['class_id'] == proposed_class:
-                                    area_proposed = ft['bbox'][2] * ft['bbox'][3]
-                            
-                            if area_proposed > area_locked:
-                                score_proposed += 1
-                            elif area_locked > 0:
-                                score_locked += 1
+                            check_range = min(len(frames), i + LOOK_AHEAD_FRAMES)
+                            for k in range(i + 1, check_range):
+                                # Find largest face/body for locked vs proposed in future frame
+                                f_tracks = frames[k]['tracks']
                                 
-                        future_frames = check_range - (i + 1)
-                        if future_frames > 0:
-                            win_ratio = score_proposed / future_frames
-                            if win_ratio > SWITCH_THRESHOLD_RATIO:
-                                # New target dominates future -> Allow Switch
+                                # Simple metric: Area
+                                area_locked = 0
+                                area_proposed = 0
+                                
+                                for ft in f_tracks:
+                                    if ft['id'] == active_track_id and ft['class_id'] == active_class_id:
+                                        area_locked = ft['bbox'][2] * ft['bbox'][3]
+                                    elif ft['id'] == proposed_id and ft['class_id'] == proposed_class:
+                                        area_proposed = ft['bbox'][2] * ft['bbox'][3]
+                                
+                                if area_proposed > area_locked:
+                                    score_proposed += 1
+                                elif area_locked > 0:
+                                    score_locked += 1
+                                    
+                            future_frames = check_range - (i + 1)
+                            if future_frames > 0:
+                                win_ratio = score_proposed / future_frames
+                                if win_ratio > SWITCH_THRESHOLD_RATIO:
+                                    # New target dominates future -> Allow Switch
+                                    active_track_id = proposed_id
+                                    active_class_id = proposed_class
+                                    # final_target is already set to proposed
+                                else:
+                                    # New target is short-lived -> REJECT Switch, Stick to Locked
+                                    x, y, w, h = current_locked_obj['bbox']
+                                    
+                                    # Director returns center, but we might want adjustments based on class
+                                    if active_class_id == 1: # Body
+                                        cy = y + int(h * 0.3)
+                                    else:
+                                        cy = y + h // 2
+                                    cx = x + w // 2
+                                    
+                                    final_target = (cx, cy)
+                                    final_reason = f"Locked ID:{active_track_id} (Ignored {proposed_id})"
+                            else:
+                                # End of video, just follow director
                                 active_track_id = proposed_id
                                 active_class_id = proposed_class
-                                # final_target is already set to proposed
-                            else:
-                                # New target is short-lived -> REJECT Switch, Stick to Locked
-                                x, y, w, h = current_locked_obj['bbox']
-                                
-                                # Director returns center, but we might want adjustments based on class
-                                if active_class_id == 1: # Body
-                                    cy = y + int(h * 0.3)
-                                else:
-                                    cy = y + h // 2
-                                cx = x + w // 2
-                                
-                                final_target = (cx, cy)
-                                final_reason = f"Locked ID:{active_track_id} (Ignored {proposed_id})"
                         else:
-                            # End of video, just follow director
+                            # Proposed is Non-ID (Saliency/Center). If Locked is visible, Stick to Locked?
+                            # Usually stick to locked object if visible
+                             x, y, w, h = current_locked_obj['bbox']
+                             if active_class_id == 1: # Body
+                                 cy = y + int(h * 0.3)
+                             else:
+                                 cy = y + h // 2
+                             cx = x + w // 2
+                             final_target = (cx, cy)
+                             final_reason = f"Locked ID:{active_track_id} (Ignored Saliency)"
+                    else:
+                        # Locked target LOST (temporarily?).
+                        # Check Future: Does this ID return within Grace Period?
+                        # GRACE_PERIOD is now from config
+                        
+                        found_future = False
+                        future_check_limit = min(len(frames), i + GRACE_PERIOD)
+                        
+                        for k in range(i + 1, future_check_limit):
+                             f_tracks = frames[k]['tracks']
+                             # Is active_track_id present?
+                             for ft in f_tracks:
+                                 if ft['id'] == active_track_id and ft['class_id'] == active_class_id:
+                                     found_future = True
+                                     break
+                             if found_future:
+                                 break
+                        
+                        if found_future:
+                            # IT COMES BACK! Hold position.
+                            # distinct from "Locked" reason to debug easier
+                            final_reason = f"Hold Lock ID:{active_track_id} (Reappears soon)"
+                            
+                            # Use Last Known Target Position
+                            if len(raw_targets) > 0:
+                                final_target = raw_targets[-1] # Stay exactly where we were
+                            else:
+                                final_target = proposed_point # Should rarely happen
+                                
+                            # Do NOT change active_track_id (Keep locking it)
+                        else:
+                            # Truly lost. Switch to proposed (Saliency or other)
                             active_track_id = proposed_id
                             active_class_id = proposed_class
-                    else:
-                        # Proposed is Non-ID (Saliency/Center). If Locked is visible, Stick to Locked?
-                        # Usually stick to locked object if visible
-                         x, y, w, h = current_locked_obj['bbox']
-                         if active_class_id == 1: # Body
-                             cy = y + int(h * 0.3)
-                         else:
-                             cy = y + h // 2
-                         cx = x + w // 2
-                         final_target = (cx, cy)
-                         final_reason = f"Locked ID:{active_track_id} (Ignored Saliency)"
-                else:
-                    # Locked target LOST (temporarily?).
-                    # Check Future: Does this ID return within Grace Period?
-                    # GRACE_PERIOD is now from config
-                    
-                    found_future = False
-                    future_check_limit = min(len(frames), i + GRACE_PERIOD)
-                    
-                    for k in range(i + 1, future_check_limit):
-                         f_tracks = frames[k]['tracks']
-                         # Is active_track_id present?
-                         for ft in f_tracks:
-                             if ft['id'] == active_track_id and ft['class_id'] == active_class_id:
-                                 found_future = True
-                                 break
-                         if found_future:
-                             break
-                    
-                    if found_future:
-                        # IT COMES BACK! Hold position.
-                        # distinct from "Locked" reason to debug easier
-                        final_reason = f"Hold Lock ID:{active_track_id} (Reappears soon)"
-                        
-                        # Use Last Known Target Position
-                        if len(raw_targets) > 0:
-                            final_target = raw_targets[-1] # Stay exactly where we were
-                        else:
-                            final_target = proposed_point # Should rarely happen
-                            
-                        # Do NOT change active_track_id (Keep locking it)
-                    else:
-                        # Truly lost. Switch to proposed (Saliency or other)
-                        active_track_id = proposed_id
-                        active_class_id = proposed_class
-                        # final_target is already proposed_point
+                            # final_target is already proposed_point
             
             elif active_track_id is None and proposed_id is not None:
                 # No lock, acquire new lock
