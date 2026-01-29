@@ -33,6 +33,7 @@ def main():
     parser.add_argument("--smooth", type=float, default=default_smooth, help=f"Smoothing factor (default: {default_smooth})")
     parser.add_argument("--output", type=str, default=None, help="Path to save output video")
     parser.add_argument("--saliency-only", action="store_true", help="Run ONLY Saliency detection (Skip Face/Body)")
+    parser.add_argument("--debug-view", action="store_true", help="Enable side-by-side debug view (Original + Vertical Crop)")
     
     args = parser.parse_args()
 
@@ -66,7 +67,7 @@ def main():
     
     # 3. RENDER
     renderer = VideoRenderer(config)
-    renderer.render(args.video_path, json_camera_path, output_video, tracking_json_path=json_track_data)
+    renderer.render(args.video_path, json_camera_path, output_video, tracking_json_path=json_track_data, debug_mode=args.debug_view)
     
     # 4. MERGE AUDIO
     print("-" * 30)
