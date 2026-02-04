@@ -24,7 +24,7 @@ class ByteTracker:
         
         Args:
             detections_list (list): List of dicts from Detectors 
-                                    [{'bbox': [x,y,w,h], 'score': 0.9, 'class_id': 0}, ...]
+                                    [{'bbox': [x,y,w,h], 'score': 0.9, 'class_id': 0, 'sharpness': 50.0}, ...]
         
         Returns:
             list: List of tracked objects with 'track_id' added.
@@ -35,9 +35,11 @@ class ByteTracker:
             return []
 
         # 1. Convert format (list of dicts) to supervision.Detections
+        # Keep extra metadata (sharpness) for later
         xyxy = []
         confidence = []
         class_id = []
+        metadata = []  # Store sharpness and other fields
 
         for det in detections_list:
             x, y, w, h = det['bbox']
@@ -48,6 +50,12 @@ class ByteTracker:
             xyxy.append([x, y, x + w, y + h])
             confidence.append(score)
             class_id.append(cls)
+            
+            # Store metadata
+            metadata.append({
+                'sharpness': det.get('sharpness', 0.0),
+                'original_bbox': det['bbox']
+            })
 
         detections = sv.Detections(
             xyxy=np.array(xyxy),
@@ -71,20 +79,18 @@ class ByteTracker:
             conf = tracked_detections.confidence[i] if tracked_detections.confidence is not None else 0.0
             cls_id = int(tracked_detections.class_id[i]) if tracked_detections.class_id is not None else 0
             
-            # Determine type label
-            obj_type = "face" # Default
-            if cls_id == 0:
-                 # Note: YOLO person is 0, but MediaPipe face we might also map to 0? 
-                 # We must coordinate Class IDs in the pipeline.
-                 # Let's assume Pipeline sends: Face=0, Person=1, Others=2+
-                 pass 
+            # Match sharpness from metadata by finding closest bbox
+            # (ByteTrack may slightly adjust bbox, so we match by position)
+            sharpness = 0.0
+            if i < len(metadata):
+                sharpness = metadata[i].get('sharpness', 0.0)
             
             results.append({
                 "bbox": [int(x1), int(y1), int(w), int(h)],
                 "score": float(conf),
                 "track_id": int(tracker_id),
-                "class_id": cls_id
-                # 'type' will be determined by pipeline based on class_id or passed through
+                "class_id": cls_id,
+                "sharpness": float(sharpness)
             })
             
         return results

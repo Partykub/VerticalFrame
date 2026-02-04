@@ -9,31 +9,59 @@
     },
     "tracking": {
         "_comment": "smooth: 0.1-1.0, easing_type: linear, ease_in, ease_out, ease_in_out, sine_in, sine_out, sine_in_out",
+        "tracker_type": "deepsort",
+        "deepsort": {
+            "embedder": "clip_RN50",
+            "max_age": 30
+        },
+        "bytetrack": {
+            "track_buffer": 30
+        },
         "smooth_factor": 0.1,
-        "min_sharpness": 15,
-        "track_buffer": 30,
-        "detection_confidence": 0.3,
+        "min_sharpness": 10,
+        "track_buffer": 20,
+        "detection_confidence": 0.5,
         "easing_type": "sine_in_out"
     },
     "director": {
-        "_comment": "ตั้งค่า Director AI ในการเลือกเป้าหมาย face_priority: น้ำหนักขนาดหน้า, body_offset: จุดโฟกัสบนตัว (0.3=อก)",
+        "_comment": "face_switch_threshold: 1.0=เปลี่ยนทันที, 1.1=ต้องดีกว่า10%, 1.2=ต้องดีกว่า20%",
         "face_priority_size_weight": 1.0,
-        "body_offset_y": 0.3
+        "body_offset_y": 0.3,
+        "body_to_face_lookahead": 30,
+        "body_face_overlap_threshold": 0.3,
+        "face_switch_threshold": 1.0
     },
     "camera_control": {
-        "_comment": "Dead Zone: ระยะ % ที่ขยับได้โดยกล้องไม่ตาม (กันสั่น), Min Duration: เฟรมที่ต้องนิ่งก่อนเปลี่ยน anchor, Fast Pan: % จอที่ถ้าหลุดไปจะเร่งความเร็วตาม, transition_mode: cut, smooth, smart (ใกล้ smooth/ไกล cut)",
-        "transition_mode": "smart",
-        "smart_cut_threshold_percent": 0.4,
+        "_comment": "Dead Zone: ระยะ % ที่ขยับได้โดยกล้องไม่ตาม (กันสั่น), Min Duration: เฟรมที่ต้องนิ่งก่อนเปลี่ยน anchor, Fast Pan: % จอที่ถ้าหลุดไปจะเร่งความเร็วตาม, transition_mode: cut, smooth, smart, conversation, predictive",
+        "transition_mode": "conversation",
+        "smart_cut_threshold_percent": 0.2,
         "dead_zone_percent": 0.10,
         "min_duration_frames": 15,
         "fast_pan_threshold_percent": 0.15,
-        "max_smooth_factor": 0.1
+        "max_smooth_factor": 0.1,
+        "conversation_settings": {
+            "_comment": "ตั้งค่าสำหรับ conversation mode: cut_on_id_change (ตัดทันทีเมื่อเปลี่ยนคน), min_same_id_frames (ป้องกัน ByteTracker สับ ID), allow_smooth_same_id (ใช้ smooth pan ถ้า ID เดิม)",
+            "cut_on_id_change": true,
+            "min_same_id_frames": 10,
+            "allow_smooth_same_id": true,
+            "look_ahead_frames": 45,
+            "grace_period_frames": 45
+        },
+        "predictive_settings": {
+            "_comment": "ตั้งค่าสำหรับ predictive mode: ดูอนาคตว่า ID จะหายไหม แล้ว PLAN ล่วงหน้า CUT เฉพาะเมื่อ ID เปลี่ยนจริง",
+            "look_ahead_frames": 30,
+            "grace_period_frames": 10,
+            "pre_cut_plan_frames": 5,
+            "min_confidence_switch": 0.5,
+            "max_gap_frames": 5,
+            "min_same_id_frames": 10
+        }
     },
     "smart_lock": {
         "_comment": "ระบบล็อคเป้าหมาย: look_ahead (เช็คอนาคตก่อนเปลี่ยนคน), threshold (ต้องชนะกี่ % ถึงเปลี่ยน), grace_period (รอคนเก่านานแค่ไหนถ้าหาย)",
-        "look_ahead_frames": 60,
-        "switch_threshold_ratio": 0.6,
-        "grace_period_frames": 30
+        "look_ahead_frames": 45,
+        "switch_threshold_ratio": 0.75,
+        "grace_period_frames": 45
     },
     "saliency_control": {
         "_comment": "ป้องกัน Saliency กระโดดไปมา. jump: ระยะโดด, stable: เฟรมที่เช็ค, ignore: ขอบ, confidence: % ความมั่นใจในอนาคต",

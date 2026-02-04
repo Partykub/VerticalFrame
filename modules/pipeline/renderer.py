@@ -20,6 +20,13 @@ class VideoRenderer:
             
         camera_path = data['path']
         debug_info = data.get('debug_info', []) # Load reasoning info
+        track_id_history = data.get('track_id_history', []) # Load focused Track IDs (decision)
+        actual_focused_history = data.get('actual_focused_history', []) # ACTUAL bbox used for camera
+        
+        # Load config for threshold visualization
+        cam_ctrl = self.config.get("camera_control", {})
+        transition_mode = cam_ctrl.get("transition_mode", "smooth")
+        smart_cut_threshold_pct = cam_ctrl.get("smart_cut_threshold_percent", 0.4)
         
         # Load Tracking Data
         tracking_frames = {}
@@ -160,15 +167,181 @@ class VideoRenderer:
                     current_frame_data = tracking_frames.get(frame_idx + 1)
                     current_reason = debug_info[frame_idx] if frame_idx < len(debug_info) else ""
                     
+                    # Get ACTUAL focused bbox info (used for camera position)
+                    actual_focused_info = actual_focused_history[frame_idx] if frame_idx < len(actual_focused_history) else None
+                    focused_track_id = actual_focused_info['track_id'] if actual_focused_info else None
+                    focused_class_id = actual_focused_info['class_id'] if actual_focused_info else None
+                    
                     if current_frame_data:
                         for track in current_frame_data.get('tracks', []):
+                            # Skip Ghost Tracks (missed > 0)
+                            if track.get('missed', 0) > 0:
+                                continue
+
                             dx, dy, dw, dh = track['bbox']
                             cls_id = track['class_id']
-                            color = (0, 255, 0) if cls_id == 0 else (255, 0, 0)
-                            cv2.rectangle(debug_frame, (dx, dy), (dx + dw, dy + dh), color, 2)
+                            track_id = track.get('id', '?')
+                            conf = track.get('conf', 0.0) # Get confidence score
+                            sharp = track.get('sharpness', 0.0) # Get sharpness score
+                            
+                            # Check if this is the ACTUAL focused track (used for camera position)
+                            is_focused = (track_id == focused_track_id and cls_id == focused_class_id)
+                            
+                            # Color: Green for Face, Blue for Body
+                            base_color = (0, 255, 0) if cls_id == 0 else (255, 0, 0)
+                            
+                            # If focused: Use bright cyan/yellow, thicker line
+                            if is_focused:
+                                color = (0, 255, 255)  # Bright Cyan
+                                thickness = 5
+                                label_bg_color = (0, 200, 200)  # Darker cyan for label bg
+                            else:
+                                color = base_color
+                                thickness = 2
+                                label_bg_color = color
+                            
+                            # Draw bounding box
+                            cv2.rectangle(debug_frame, (dx, dy), (dx + dw, dy + dh), color, thickness)
+                            
+                            # Draw Track ID label with Confidence and Sharpness
+                            class_name = "Face" if cls_id == 0 else "Body"
+                            label = f"{class_name} #{track_id} ({conf:.2f} S:{int(sharp)})"
+                            if is_focused:
+                                label = f">>> {class_name} #{track_id} ({conf:.2f} S:{int(sharp)}) [FOCUS] <<<"
+                            
+                            label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                            label_w, label_h = label_size
+                            
+                            # Background rectangle for label (above bbox)
+                            label_y = max(dy - 5, label_h + 5)
+                            cv2.rectangle(debug_frame, 
+                                        (dx, label_y - label_h - 5), 
+                                        (dx + label_w + 5, label_y + 2), 
+                                        label_bg_color, -1)
+                            
+                            # Text label (white color, bold if focused)
+                            text_thickness = 3 if is_focused else 2
+                            cv2.putText(debug_frame, label, 
+                                      (dx + 2, label_y - 2), 
+                                      cv2.FONT_HERSHEY_SIMPLEX, 
+                                      0.6, (255, 255, 255), text_thickness)
                     
                     # Draw Crop Box on Original
                     cv2.rectangle(debug_frame, (x1, 0), (x2, height), (255, 0, 255), 4)
+                    
+                    # Draw Cut/Plan Threshold Lines or Predictive Status
+                    if transition_mode == "predictive":
+                        # Get predictive status for this frame
+                        predictive_status = data.get('predictive_status', [])
+                        plan_status = predictive_status[frame_idx] if frame_idx < len(predictive_status) else ""
+                        
+                        # Draw center camera position indicator
+                        cv2.line(debug_frame, (int(cam_x), 0), 
+                               (int(cam_x), height), 
+                               (0, 165, 255), 2)  # Orange line = camera center
+                        
+                        # Color based on status
+                        status_color = (0, 255, 0)  # Green for PLAN
+                        if "PRE-PLAN" in plan_status:
+                            status_color = (0, 165, 255)  # Orange
+                        elif "HOLD" in plan_status:
+                            status_color = (0, 255, 255)  # Yellow
+                        elif "CUT" in plan_status:
+                            status_color = (0, 0, 255)  # Red
+                        
+                        # Show mode and status
+                        legend_y = 30
+                        cv2.putText(debug_frame, f"Mode: PREDICTIVE", 
+                                  (10, legend_y), cv2.FONT_HERSHEY_SIMPLEX, 
+                                  0.7, (255, 255, 255), 2)
+                        
+                        if plan_status:
+                            cv2.putText(debug_frame, plan_status, 
+                                      (10, legend_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 
+                                      0.6, status_color, 2)
+                        
+                        # Show focused Track ID
+                        if actual_focused_info:
+                            focused_track_id = actual_focused_info.get('track_id')
+                            focused_class = actual_focused_info.get('class_id')
+                            
+                            if focused_track_id is not None and focused_class is not None:
+                                class_name = "Face" if focused_class == 0 else "Body" if focused_class == 1 else "Obj"
+                                focus_text = f"Focus: {class_name} ID:{focused_track_id}"
+                            else:
+                                focus_text = "Focus: Saliency/None"
+                        else:
+                            focus_text = "Focus: None"
+                        
+                        cv2.putText(debug_frame, focus_text, 
+                                  (10, legend_y + 60), cv2.FONT_HERSHEY_SIMPLEX, 
+                                  0.6, (255, 255, 255), 2)
+                    
+                    elif transition_mode in ["smart", "conversation"]:
+                        threshold_px = int(width * smart_cut_threshold_pct)
+                        
+                        # Left threshold line (ถ้าเกินเส้นนี้ไปทางซ้าย = cut)
+                        left_threshold = cam_x - threshold_px
+                        if left_threshold > 0:
+                            cv2.line(debug_frame, (int(left_threshold), 0), 
+                                   (int(left_threshold), height), 
+                                   (0, 255, 255), 2)  # Yellow line
+                        
+                        # Right threshold line (ถ้าเกินเส้นนี้ไปทางขวา = cut)
+                        right_threshold = cam_x + threshold_px
+                        if right_threshold < width:
+                            cv2.line(debug_frame, (int(right_threshold), 0), 
+                                   (int(right_threshold), height), 
+                                   (0, 255, 255), 2)  # Yellow line
+                        
+                        # Draw center camera position indicator
+                        cv2.line(debug_frame, (int(cam_x), 0), 
+                               (int(cam_x), height), 
+                               (0, 165, 255), 2)  # Orange line = camera center
+                        
+                        # Add legend text
+                        legend_y = 30
+                        cv2.putText(debug_frame, f"Mode: {transition_mode.upper()}", 
+                                  (10, legend_y), cv2.FONT_HERSHEY_SIMPLEX, 
+                                  0.7, (255, 255, 255), 2)
+                        cv2.putText(debug_frame, f"Cut Threshold: {int(threshold_px)}px ({smart_cut_threshold_pct*100:.0f}%)", 
+                                  (10, legend_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 
+                                  0.6, (0, 255, 255), 2)
+                        
+                        # Show focused Track ID (ACTUAL bbox used for camera)
+                        if actual_focused_info:
+                            focused_track_id = actual_focused_info.get('track_id')
+                            focused_class = actual_focused_info.get('class_id')
+                            
+                            if focused_track_id is not None and focused_class is not None:
+                                class_name = "Face" if focused_class == 0 else "Body" if focused_class == 1 else "Obj"
+                                focus_text = f"Focus: {class_name} ID:{focused_track_id}"
+                            else:
+                                # Saliency or other non-tracked target
+                                focus_text = "Focus: Saliency/None"
+                        else:
+                            focus_text = "Focus: None (No Data)"
+                        
+                        cv2.putText(debug_frame, focus_text, 
+                                  (10, legend_y + 60), cv2.FONT_HERSHEY_SIMPLEX, 
+                                  0.6, (0, 255, 255), 2)  # Cyan color
+                        
+                        # Show decision Track ID (what Analyzer wanted to lock)
+                        decision_id = track_id_history[frame_idx] if frame_idx < len(track_id_history) else None
+                        if decision_id is not None:
+                            decision_text = f"Decision: Track ID:{decision_id}"
+                        else:
+                            decision_text = "Decision: None"
+                        
+                        cv2.putText(debug_frame, decision_text, 
+                                  (10, legend_y + 90), cv2.FONT_HERSHEY_SIMPLEX, 
+                                  0.6, (100, 200, 255), 2)  # Light orange
+                        
+                        # Current reason (from analyzer)
+                        if current_reason:
+                            cv2.putText(debug_frame, f"Reason: {current_reason}", 
+                                      (10, legend_y + 120), cv2.FONT_HERSHEY_SIMPLEX, 
+                                      0.5, (200, 200, 200), 2)  # Gray
 
                     # Resize crop if needed (should match height already)
                     if crop_view.shape[0] != height:

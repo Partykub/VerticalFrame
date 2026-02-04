@@ -8,6 +8,7 @@ from modules.detection.mediapipe_detector import MediaPipeDetector
 from modules.detection.yolov8_detector import YOLOv8Detector
 from modules.detection.saliency_detector import SaliencyDetector
 from modules.tracking.tracker import ByteTracker
+from modules.tracking.deepsort_tracker import DeepSortTracker
 
 class VideoScanner:
     def __init__(self, config):
@@ -52,11 +53,26 @@ class VideoScanner:
         # Saliency
         self.saliency_detector = SaliencyDetector(algorithm="spectral")
         
-        # Tracker
-        self.tracker = ByteTracker(
-            track_thresh=0.25, 
-            track_buffer=tracking_cfg.get("track_buffer", 30)
-        )
+        # Tracker Selection
+        self.tracker_type = tracking_cfg.get("tracker_type", "bytetrack")
+        
+        if self.tracker_type == "deepsort":
+            ds_cfg = tracking_cfg.get("deepsort", {})
+            embedder = ds_cfg.get("embedder", "mobilenet")
+            max_age = ds_cfg.get("max_age", 30)
+            print(f"Initializing DeepSORT Tracker (embedder: {embedder})...")
+            self.tracker = DeepSortTracker(
+                max_age=max_age,
+                embedder=embedder,
+                embedder_gpu=True
+            )
+        else:
+            print("Initializing ByteTrack...")
+            bt_cfg = tracking_cfg.get("bytetrack", {})
+            self.tracker = ByteTracker(
+                track_thresh=0.25, 
+                track_buffer=bt_cfg.get("track_buffer", 30)
+            )
 
     def scan(self, video_path, output_json_path):
         """
@@ -143,6 +159,20 @@ class VideoScanner:
             json.dump(tracking_data, f, indent=None) # No indent to save space
             
         print("Scan Complete.")
+
+        # CLEANUP
+        if not self.saliency_only and self.face_detector_pool:
+            print("Cleaning up Face Detectors...")
+            while not self.face_detector_pool.empty():
+                try:
+                    detector = self.face_detector_pool.get_nowait()
+                    detector.close()
+                except:
+                    pass
+            # Also close the fallback reference if distinct
+            if hasattr(self, 'face_detector') and self.face_detector:
+                self.face_detector.close()
+
 
     def _process_cpu_task(self, frame):
         """Helper for parallel CPU processing"""
@@ -251,7 +281,11 @@ class VideoScanner:
                 all_detections.append(det)
 
             # Tracking
-            tracked_objects = self.tracker.update(all_detections)
+            # Tracking
+            if self.tracker_type == "deepsort":
+                 tracked_objects = self.tracker.update(all_detections, frame=frame)
+            else:
+                 tracked_objects = self.tracker.update(all_detections)
             
             # Serialize
             serialized_tracks = []
@@ -261,7 +295,9 @@ class VideoScanner:
                     "id": int(t['track_id']),
                     "class_id": int(t.get('class_id', -1)),
                     "bbox": bbox,
-                    "conf": float(t.get('confidence', 0.0))
+                    "conf": float(t.get('score', 0.0)),  # Fixed: use 'score' not 'confidence'
+                    "sharpness": float(t.get('sharpness', 0.0)),  # Added: save sharpness
+                    "missed": int(t.get('missed_frames', 0)) # Added: Check for ghost tracks
                 })
             
             frame_data = {

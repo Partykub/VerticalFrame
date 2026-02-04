@@ -17,6 +17,7 @@ env/
 *.pt
 *.pth
 *.onnx
+*.tflite
 
 # Videos (Input & Output)
 *.mp4
