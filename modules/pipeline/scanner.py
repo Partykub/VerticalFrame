@@ -6,6 +6,7 @@ import numpy as np
 from tqdm import tqdm
 from modules.detection.mediapipe_detector import MediaPipeDetector
 from modules.detection.yolov8_detector import YOLOv8Detector
+from modules.detection.yolo_face_detector import YOLOFaceDetector
 from modules.detection.saliency_detector import SaliencyDetector
 from modules.tracking.tracker import ByteTracker
 from modules.tracking.deepsort_tracker import DeepSortTracker
@@ -19,28 +20,43 @@ class VideoScanner:
         scanner_cfg = self.config.get("scanner", {})
         self.saliency_only = scanner_cfg.get("saliency_only", False)
         
-        # Face: Use Pool for Parallel Processing
+        # Face Detector Selection
+        self.face_detector_type = scanner_cfg.get("face_detector", "mediapipe")
+        
+        # Face: Use Pool for Parallel Processing (MediaPipe only, YOLO uses GPU batch)
         import queue
         self.num_cpu_workers = 4 # Adjust based on CPU cores
         
         if not self.saliency_only:
-            print(f"Initializing {self.num_cpu_workers} Face Detectors for Parallel CPU Processing...")
-            self.face_detector_pool = queue.Queue()
-            
-            def create_detector():
-                return MediaPipeDetector(
-                    min_sharpness_threshold=tracking_cfg.get("min_sharpness", 0),
-                    min_detection_confidence=tracking_cfg.get("detection_confidence", 0.3)
+            if self.face_detector_type == "yolo":
+                # === YOLO Face Detection (GPU) ===
+                yolo_model = scanner_cfg.get("yolo_face_model", "yolov8n-face")
+                print(f"Initializing YOLO Face Detector ({yolo_model})...")
+                self.face_detector = YOLOFaceDetector(
+                    model_name=yolo_model,
+                    conf_threshold=tracking_cfg.get("detection_confidence", 0.5),
+                    min_sharpness_threshold=tracking_cfg.get("min_sharpness", 0)
                 )
+                self.face_detector_pool = None  # YOLO doesn't need pool (GPU batch)
+            else:
+                # === MediaPipe Face Detection (CPU, Parallel) ===
+                print(f"Initializing {self.num_cpu_workers} MediaPipe Face Detectors...")
+                self.face_detector_pool = queue.Queue()
+                
+                def create_detector():
+                    return MediaPipeDetector(
+                        min_sharpness_threshold=tracking_cfg.get("min_sharpness", 0),
+                        min_detection_confidence=tracking_cfg.get("detection_confidence", 0.3)
+                    )
 
-            for _ in range(self.num_cpu_workers):
-                self.face_detector_pool.put(create_detector())
+                for _ in range(self.num_cpu_workers):
+                    self.face_detector_pool.put(create_detector())
+                
+                # Fallback ref
+                self.face_detector = create_detector()
             
-            # Fallback ref
-            self.face_detector = create_detector()
-            
-            # Body: Upgrade to YOLOv8m (Medium) for better separation
-            print("Loading YOLOv8m (Medium) model...")
+            # Body: YOLOv8m (Medium) for better separation
+            print("Loading YOLOv8m (Medium) for Body Detection...")
             self.body_detector = YOLOv8Detector(
                 model_path="yolov8m.pt",
                 min_sharpness_threshold=tracking_cfg.get("min_sharpness", 0)
@@ -161,21 +177,22 @@ class VideoScanner:
         print("Scan Complete.")
 
         # CLEANUP
-        if not self.saliency_only and self.face_detector_pool:
-            print("Cleaning up Face Detectors...")
-            while not self.face_detector_pool.empty():
-                try:
-                    detector = self.face_detector_pool.get_nowait()
-                    detector.close()
-                except:
-                    pass
-            # Also close the fallback reference if distinct
+        if not self.saliency_only:
+            if self.face_detector_pool:
+                print("Cleaning up MediaPipe Face Detectors...")
+                while not self.face_detector_pool.empty():
+                    try:
+                        detector = self.face_detector_pool.get_nowait()
+                        detector.close()
+                    except:
+                        pass
+            # Also close the fallback/main reference
             if hasattr(self, 'face_detector') and self.face_detector:
                 self.face_detector.close()
 
 
     def _process_cpu_task(self, frame):
-        """Helper for parallel CPU processing"""
+        """Helper for parallel CPU processing (MediaPipe only)"""
         # If saliency only, this shouldn't be called via executor map with this logic, 
         # But for safety/robustness:
         if self.saliency_only:
@@ -210,22 +227,55 @@ class VideoScanner:
             return face_results, saliency_point
         finally:
             self.face_detector_pool.put(detector)
+    
+    def _process_yolo_face(self, frame):
+        """Helper for YOLO Face detection (single frame)"""
+        if self.saliency_only:
+            return [], None
+        
+        face_results = self.face_detector.detect(frame)
+        
+        # Saliency
+        saliency_map = self.saliency_detector.detect(frame)
+        saliency_point = None
+        if saliency_map is not None:
+            h_map, w_map = saliency_map.shape
+            
+            sal_cfg = self.config.get("saliency_control", {})
+            ignore_pct = sal_cfg.get("ignore_border_percent", 0.15)
+            
+            mask_w = int(w_map * ignore_pct)
+            mask_h = int(h_map * ignore_pct)
+            
+            cv2.rectangle(saliency_map, (0, 0), (w_map, mask_h), 0, -1)
+            cv2.rectangle(saliency_map, (0, h_map - mask_h), (w_map, h_map), 0, -1)
+            cv2.rectangle(saliency_map, (0, 0), (mask_w, h_map), 0, -1)
+            cv2.rectangle(saliency_map, (w_map - mask_w, 0), (w_map, h_map), 0, -1)
+            
+            minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(saliency_map)
+            saliency_point = maxLoc
+        
+        return face_results, saliency_point
 
     def process_batch(self, frames, current_global_idx, tracking_data, pbar):
         """
-        Process a batch: YOLO (GPU Batch) + Face/Saliency (CPU Parallel)
+        Process a batch: YOLO (GPU Batch) + Face/Saliency (CPU Parallel or GPU)
         """
         yolo_batch_results = []
         cpu_results = []
         
         if not self.saliency_only:
-            # 1. YOLO Batch Inference (GPU)
+            # 1. YOLO Batch Inference for Body (GPU)
             target_classes = [0, 2, 3, 15, 16, 63, 67]
             yolo_batch_results = self.body_detector.detect_batch(frames, classes=target_classes)
             
-            # 2. Parallel CPU Processing (Face + Saliency)
-            # Use helper to run both Face and Saliency in parallel
-            cpu_results = list(self.cpu_executor.map(self._process_cpu_task, frames))
+            # 2. Face Detection + Saliency
+            if self.face_detector_type == "yolo":
+                # YOLO Face: Process sequentially (GPU already busy with body)
+                cpu_results = [self._process_yolo_face(frame) for frame in frames]
+            else:
+                # MediaPipe: Parallel CPU Processing
+                cpu_results = list(self.cpu_executor.map(self._process_cpu_task, frames))
         else:
             # Saliency Only Mode: Run ONLY Saliency (No Face Detector)
             for frame in frames:

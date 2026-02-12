@@ -4,7 +4,9 @@
         "default": "tracking"
     },
     "scanner": {
-        "_comment": "ตั้งค่าการสแกน. batch_size: จำนวนเฟรมที่ส่งเข้า GPU พร้อมกัน (ยิ่งเยอะยิ่งเร็วแต่กิน VRAM)",
+        "_comment": "ตั้งค่าการสแกน. face_detector: 'mediapipe' หรือ 'yolo'. batch_size: จำนวนเฟรมที่ส่งเข้า GPU พร้อมกัน",
+        "face_detector": "yolo",
+        "yolo_face_model": "yolov8m-face",
         "batch_size": 128
     },
     "tracking": {
