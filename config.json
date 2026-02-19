@@ -27,7 +27,7 @@
     },
     "director": {
         "_comment": "face_switch_threshold: 1.0=เปลี่ยนทันที, 1.1=ต้องดีกว่า10%, 1.2=ต้องดีกว่า20%",
-        "face_priority_size_weight": 1.0,
+        "face_priority_size_weight": 1.2,
         "body_offset_y": 0.3,
         "body_to_face_lookahead": 30,
         "body_face_overlap_threshold": 0.3,
@@ -35,10 +35,10 @@
     },
     "camera_control": {
         "_comment": "Dead Zone: ระยะ % ที่ขยับได้โดยกล้องไม่ตาม (กันสั่น), Min Duration: เฟรมที่ต้องนิ่งก่อนเปลี่ยน anchor, Fast Pan: % จอที่ถ้าหลุดไปจะเร่งความเร็วตาม, transition_mode: cut, smooth, smart, conversation, predictive",
-        "transition_mode": "conversation",
-        "smart_cut_threshold_percent": 0.2,
+        "transition_mode": "smart",
+        "smart_cut_threshold_percent": 0.3,
         "dead_zone_percent": 0.10,
-        "min_duration_frames": 15,
+        "min_duration_frames": 20,
         "fast_pan_threshold_percent": 0.15,
         "max_smooth_factor": 0.1,
         "conversation_settings": {
