@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+env
+
+# Models (downloaded at build time)
+*.pt
+*.pth
+*.onnx
+*.tflite
+
+# Videos
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Pipeline temp files
+temp_*.json
+temp_*.mp4
+output_*.mp4
+*_out.mp4
+*_final.mp4
+
+# Data directories (mounted at runtime)
+data/input/*
+data/output/*
+
+# IDE and logs
+.vscode
+.idea
+*.log
+runs
+.DS_Store
+Thumbs.db
+
+# Docs not needed in image
+DEPLOY.md
+PROJECT_SUMMARY.md
+FOCUS_LOGIC.md
+DEBUG_VIEW_FEATURE.md
+THRESHOLD_VISUALIZATION.md

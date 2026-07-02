@@ -1,0 +1,27 @@
+services:
+  verticalframe:
+    build: .
+    image: verticalframe:latest
+    volumes:
+      - ./data/input:/data/input:ro
+      - ./data/output:/data/output
+      - ./config.json:/app/config.json:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  verticalframe-cpu:
+    build: .
+    image: verticalframe:latest
+    volumes:
+      - ./data/input:/data/input:ro
+      - ./data/output:/data/output
+      - ./config.json:/app/config.json:ro
+    profiles:
+      - cpu

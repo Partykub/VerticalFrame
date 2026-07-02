@@ -16,8 +16,9 @@ This project is not just a cropper; it's a **High-Fidelity Rendering Engine**:
 
 ## 🚀 Key Features
 
-*   **Multi-Stage AI**: Hybrid tracking using **YOLOv8** (People), **MediaPipe** (Faces), and **Spectral Residual Saliency** (Attention).
+*   **Multi-Stage AI**: Hybrid tracking using **YOLOv8** (People), **YOLO/MediaPipe** (Faces), and **Spectral Residual Saliency** (Attention).
 *   **Smart Director**: A decision engine that prioritizes `Face > Body > Saliency` based on stability and size.
+*   **DeepSORT + CLIP**: Multi-person tracking with **OpenAI CLIP** re-identification to keep stable actor IDs in crowded scenes.
 *   **Cinematic Camera**:
     *   **Sine-In-Out Easing**: Organic start/stop camera movements (no robotic jerks).
     *   **Look-Ahead Logic**: The AI "sees the future" to prepare for subject movement before it happens.
@@ -26,19 +27,63 @@ This project is not just a cropper; it's a **High-Fidelity Rendering Engine**:
 
 ---
 
+## 🧠 AI stack
+
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| Body | YOLOv8m | Detect people |
+| Face | YOLOv8m-face (default) | Precise face boxes on GPU |
+| Saliency | OpenCV Spectral Residual | Focus when no people in frame |
+| Tracking | DeepSORT | Assign persistent track IDs |
+| Re-ID | **OpenAI CLIP (RN50)** | Match the same person across frames |
+
+**CLIP** is not used for text understanding here — only its image encoder produces a visual fingerprint so DeepSORT does not swap IDs when people cross or briefly disappear.
+
+---
+
 ## 📦 Installation
 
 ### Prerequisites
-1.  **Python 3.8+**
+1.  **Python 3.8+** (3.11 recommended)
 2.  **FFmpeg** (CRITICAL: The core engine)
     *   *Ubuntu/WSL*: `sudo apt install ffmpeg`
     *   *Windows*: Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH.
+3.  **NVIDIA GPU + CUDA** (recommended for production speed)
 
-### Setup
+### Setup (native / GPU)
+
+Install **both** requirement files — `opencv-contrib-python` (not `opencv-python`) is required for saliency detection:
+
 ```bash
-# 1. Install Dependencies
 pip install -r requirements.txt
+pip install -r requirements-gpu.txt
+python scripts/download_models.py
 ```
+
+`requirements-gpu.txt` includes PyTorch (CUDA 12.8), `deep-sort-realtime`, and **OpenAI CLIP** from GitHub (needed for default `clip_RN50` embedder).
+
+Optional: `pip install -r requirements-dev.txt` for pytest.
+
+Verify GPU:
+
+```bash
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+### Docker Deployment
+
+For production on a Linux server — or local testing via Docker Desktop — see **[DEPLOY.md](DEPLOY.md)**.
+
+Quick start:
+
+```bash
+docker compose build
+docker compose run --rm verticalframe \
+  /data/input/video.mp4 \
+  --output /data/output/video-vertical.mp4
+```
+
+Place videos in `data/input/`; outputs go to `data/output/`.
 
 ---
 
@@ -70,26 +115,38 @@ Fine-tune the camera personality:
 
 ```json
 {
+  "scanner": {
+    "face_detector": "yolo",
+    "yolo_face_model": "yolov8m-face",
+    "batch_size": 128
+  },
   "tracking": {
-    "easing_type": "sine_in_out",   // Movement style: linear, ease_in, sine_in_out...
-    "smooth_factor": 0.1,           // Lower = Smoother/Slower
-    "min_sharpness": 50             // Ignore blurry frames
+    "tracker_type": "deepsort",
+    "deepsort": {
+      "embedder": "clip_RN50"
+    },
+    "smooth_factor": 0.1,
+    "easing_type": "sine_in_out"
   },
   "camera_control": {
-    "dead_zone_percent": 0.05,      // Sensitivity buffer
-    "look_ahead_frames": 60         // Prediction window (~2 seconds)
+    "dead_zone_percent": 0.10,
+    "transition_mode": "smart"
   }
 }
 ```
+
+Use `"embedder": "mobilenet"` to skip CLIP (faster, slightly weaker tracking in crowds).
 
 ---
 
 ## 📂 Project Structure
 
 *   `auto_reframe.py`: The Commander.
+*   `modules/pipeline/scanner.py`: Detection & tracking pass (YOLO, DeepSORT, saliency).
+*   `modules/pipeline/analyzer.py`: Camera path generation.
 *   `modules/pipeline/renderer.py`: The **High-Fidelity Renderer** (FFmpeg Pipe Logic).
-*   `modules/core/cameraman.py`: The **Camera Operator** (Smoothing & Easing Logic).
-*   `modules/detection/`: The **Eyes** (YOLO/MediaPipe Wrappers).
+*   `modules/core/director.py`: Focus priority (Face > Body > Saliency).
+*   `Dockerfile`, `docker-compose.yml`, `DEPLOY.md`: Server deployment.
 
 ---
 *Powered by Advanced Agentic Coding - Google Deepmind*

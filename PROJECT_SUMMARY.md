@@ -55,6 +55,8 @@ Director AI จะเลือกเป้าหมายตามลำดั�
 
 ## 4. 🛠️ Tech Stack & Dependencies
 
+See also **[DEPLOY.md](DEPLOY.md)** for Docker deployment and **[README.md](README.md)** for install steps.
+
 ### Core Engine
 *   **Python:** 3.8+
 *   **FFmpeg (Binary):** หัวใจหลักของการจัดการ Video/Audio (ใช้ผ่าน `subprocess` pipe)
@@ -62,8 +64,10 @@ Director AI จะเลือกเป้าหมายตามลำดั�
 ### AI & Vision
 *   `ultralytics` (YOLOv8)
 *   `mediapipe` (Face Mesh)
-*   `opencv-python` (Image Processing & Raw Data Handling)
+*   `opencv-contrib-python` (Saliency — **not** `opencv-python`)
 *   `supervision` (ByteTracker Algorithm)
+*   `deep-sort-realtime` (DeepSORT tracking)
+*   `OpenAI CLIP` (Re-ID embedder for DeepSORT, default `clip_RN50`)
 
 ### Mathematics & Logic
 *   `numpy` (Matrix Operations)
